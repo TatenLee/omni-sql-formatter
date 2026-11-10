@@ -2,7 +2,7 @@
   "name": "omni-sql-formatter",
   "displayName": "Omni SQL Formatter",
   "description": "Configurable SQL formatting across PostgreSQL, MySQL, Hive, Spark and more.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "tatenlee",
   "author": "tatenlee",
   "license": "MIT",

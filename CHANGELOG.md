@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- Add a clickable `Dialect: xxx` status bar selector for SQL editors.
+- Add the `Omni SQL Formatter: change dialect` command with the current dialect listed first.
+- Save dialect selections to workspace folder settings, or user settings when no workspace is open.
+- Refresh the displayed dialect when the active editor or configuration changes.
+
 ## 0.3.0
 
 - Recognize assignment-style and optimizer SELECT hints.
