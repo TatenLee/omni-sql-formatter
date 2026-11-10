@@ -1,0 +1,31 @@
+# IDE
+.vscode/
+
+# Dependencies and package-manager caches
+node_modules/
+.pnpm-store/
+
+# Build output and packaged extensions
+dist/
+*.vsix
+*.tsbuildinfo
+
+# Downloaded test runtimes, reports and temporary patch workspaces
+.vscode-test/
+coverage/
+.patch-work/
+.cache/
+test-results/
+
+# Local logs and environment files
+*.log
+.env
+.env.*
+!.env.example
+
+# OS and editor temporary files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~

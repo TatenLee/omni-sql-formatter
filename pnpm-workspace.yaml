@@ -1,0 +1,2 @@
+patchedDependencies:
+  sql-formatter@15.9.0: patches/sql-formatter@15.9.0.patch

@@ -1,0 +1,444 @@
+diff --git a/dist/cjs/dialect.js b/dist/cjs/dialect.js
+index 201a16742362f83436d7b21068bfb9e7418cc0d9..fff861d508319e5a8b8e673b3e7d7602751283f1 100644
+--- a/dist/cjs/dialect.js
++++ b/dist/cjs/dialect.js
+@@ -5,7 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.createDialect = void 0;
+ const Tokenizer_js_1 = __importDefault(require("./lexer/Tokenizer.js"));
+-const cache = new Map();
++const cache = new WeakMap();
+ /**
+  * Factory function for building Dialect objects.
+  * When called repeatedly with same options object returns the cached Dialect,
+diff --git a/dist/cjs/formatter/ExpressionFormatter.js b/dist/cjs/formatter/ExpressionFormatter.js
+index a331a57019fe8174677387a45200689feee28ce3..e68003177532932316cb04c50a8b837c9735a5fe 100644
+--- a/dist/cjs/formatter/ExpressionFormatter.js
++++ b/dist/cjs/formatter/ExpressionFormatter.js
+@@ -141,6 +141,15 @@ class ExpressionFormatter {
+         this.formatNode(node.property);
+     }
+     formatParenthesis(node) {
++        const first = node.children[0];
++        if (node.children.length === 1 && first.type === ast_js_1.NodeType.case_expression &&
++            this.layout.isAtStartOfLine() && !first.leadingComments?.length &&
++            !first.trailingComments?.length) {
++            this.layout.add(node.openParen);
++            this.formatNode(first);
++            this.layout.add(Layout_js_1.WS.NO_SPACE, node.closeParen, Layout_js_1.WS.SPACE);
++            return;
++        }
+         const inlineLayout = this.formatInlineExpression(node.children, node.openParen);
+         if (inlineLayout) {
+             this.layout.add(node.openParen);
+@@ -169,28 +178,77 @@ class ExpressionFormatter {
+         this.layout = this.formatSubExpression(node.expr2);
+         this.layout.add(Layout_js_1.WS.NO_SPACE, Layout_js_1.WS.SPACE);
+     }
++    breakAfter(keyword, fallback) {
++        const settings = this.cfg.omniNewlineAfter || {};
++        return settings[keyword] ?? settings[keyword.split(' ')[0]] ?? fallback;
++    }
++    formatBranchBody(nodes, keyword) {
++        if (this.breakAfter(keyword, false)) {
++            this.layout.indentation.increaseBlockLevel();
++            this.layout.add(Layout_js_1.WS.NEWLINE, Layout_js_1.WS.INDENT);
++            this.layout = this.formatSubExpression(nodes);
++            this.layout.indentation.decreaseBlockLevel();
++        } else {
++            this.layout = this.formatSubExpression(nodes);
++        }
++    }
+     formatCaseExpression(node) {
+         this.formatNode(node.caseKw);
+         this.layout.indentation.increaseBlockLevel();
++        if (node.expr.length && this.breakAfter('CASE', true)) this.layout.add(Layout_js_1.WS.NEWLINE, Layout_js_1.WS.INDENT);
+         this.layout = this.formatSubExpression(node.expr);
+         this.layout = this.formatSubExpression(node.clauses);
+         this.layout.indentation.decreaseBlockLevel();
+-        this.layout.add(Layout_js_1.WS.NEWLINE, Layout_js_1.WS.INDENT);
++        const expanded = ['CASE', 'WHEN', 'THEN', 'ELSE'].some(key => this.breakAfter(key, key === 'CASE'));
++        this.layout.add(...(expanded ? [Layout_js_1.WS.NEWLINE, Layout_js_1.WS.INDENT] : [Layout_js_1.WS.NO_SPACE, Layout_js_1.WS.SPACE]));
+         this.formatNode(node.endKw);
++        if (this.breakAfter('END', false)) this.layout.add(Layout_js_1.WS.NEWLINE, Layout_js_1.WS.INDENT);
+     }
+     formatCaseWhen(node) {
+-        this.layout.add(Layout_js_1.WS.NEWLINE, Layout_js_1.WS.INDENT);
++        this.layout.add(...(this.breakAfter('CASE', true) ? [Layout_js_1.WS.NEWLINE, Layout_js_1.WS.INDENT] : [Layout_js_1.WS.NO_SPACE, Layout_js_1.WS.SPACE]));
+         this.formatNode(node.whenKw);
+-        this.layout = this.formatSubExpression(node.condition);
++        this.formatBranchBody(node.condition, 'WHEN');
+         this.formatNode(node.thenKw);
+-        this.layout = this.formatSubExpression(node.result);
++        this.formatBranchBody(node.result, 'THEN');
+     }
+     formatCaseElse(node) {
+-        this.layout.add(Layout_js_1.WS.NEWLINE, Layout_js_1.WS.INDENT);
++        this.layout.add(...(this.breakAfter('CASE', true) ? [Layout_js_1.WS.NEWLINE, Layout_js_1.WS.INDENT] : [Layout_js_1.WS.NO_SPACE, Layout_js_1.WS.SPACE]));
+         this.formatNode(node.elseKw);
+-        this.layout = this.formatSubExpression(node.result);
++        this.formatBranchBody(node.result, 'ELSE');
++    }
++    formatSelectHints(node) {
++        if (!this.cfg.omniFormatHint || !/^SELECT(?:\s|$)/u.test(node.nameKw.text)) return false;
++        const hints = [];
++        for (const child of node.children) {
++            if (child.type !== ast_js_1.NodeType.block_comment || child.leadingComments?.length || child.trailingComments?.length) break;
++            const hint = this.cfg.omniFormatHint(child.text);
++            if (hint === undefined) break;
++            hints.push(hint);
++        }
++        if (!hints.length) return false;
++        this.layout.add(Layout_js_1.WS.NEWLINE, Layout_js_1.WS.INDENT, this.showKw(node.nameKw));
++        this.layout.indentation.increaseTopLevel();
++        const sameLine = this.cfg.omniHintPlacement !== 'nextLine';
++        this.layout.add(...(sameLine ? [Layout_js_1.WS.SPACE] : [Layout_js_1.WS.NEWLINE, Layout_js_1.WS.INDENT]));
++        this.layout.add(hints.join(' '));
++        const expanded = this.breakAfter(node.nameKw.text, true);
++        this.layout.add(...(expanded ? [Layout_js_1.WS.NEWLINE, Layout_js_1.WS.INDENT] : [Layout_js_1.WS.SPACE]));
++        this.layout = this.formatSubExpression(node.children.slice(hints.length), this.enclosingParenthesis, !expanded);
++        this.layout.indentation.decreaseTopLevel();
++        return true;
+     }
+     formatClause(node) {
++        if (this.formatSelectHints(node)) return;
++        if (this.inline && node.nameKw.text === 'PARTITION BY') {
++            this.formatNode(node.nameKw);
++            this.layout = this.formatSubExpression(node.children);
++            return;
++        }
++        if (node.nameKw.text === 'WHERE' && !this.breakAfter('WHERE', true) && node.children.length === 1 &&
++            node.children[0].type === ast_js_1.NodeType.parenthesis) {
++            this.formatClauseInOnelineStyle(node);
++            return;
++        }
+         if (this.isOnelineClause(node)) {
+             this.formatClauseInOnelineStyle(node);
+         }
+@@ -202,6 +260,11 @@ class ExpressionFormatter {
+         }
+     }
+     isOnelineClause(node) {
++        const configured = this.breakAfter(node.nameKw.text, undefined);
++        if (configured !== undefined) return !configured;
++        if (/^UPDATE(?: ONLY)?$/u.test(node.nameKw.text)) {
++            return false;
++        }
+         if ((0, config_js_1.isTabularStyle)(this.cfg)) {
+             return this.dialectCfg.tabularOnelineClauses[node.nameKw.text];
+         }
+@@ -213,12 +276,12 @@ class ExpressionFormatter {
+         this.layout.add(Layout_js_1.WS.NEWLINE, Layout_js_1.WS.INDENT, this.showKw(node.nameKw), Layout_js_1.WS.NEWLINE);
+         this.layout.indentation.increaseTopLevel();
+         this.layout.add(Layout_js_1.WS.INDENT);
+-        this.layout = this.formatSubExpression(node.children);
++        this.layout = this.formatSubExpression(node.children, this.enclosingParenthesis, false);
+         this.layout.indentation.decreaseTopLevel();
+     }
+     formatClauseInOnelineStyle(node) {
+         this.layout.add(Layout_js_1.WS.NEWLINE, Layout_js_1.WS.INDENT, this.showKw(node.nameKw), Layout_js_1.WS.SPACE);
+-        this.layout = this.formatSubExpression(node.children);
++        this.layout = this.formatSubExpression(node.children, this.enclosingParenthesis, true);
+     }
+     formatClauseInTabularStyle(node) {
+         this.layout.add(Layout_js_1.WS.NEWLINE, Layout_js_1.WS.INDENT, this.showKw(node.nameKw), Layout_js_1.WS.SPACE);
+@@ -232,6 +295,15 @@ class ExpressionFormatter {
+         this.layout = this.formatSubExpression(node.children);
+     }
+     formatLimitClause(node) {
++        if (!this.breakAfter('LIMIT', true)) {
++            this.withComments(node.limitKw, () => this.layout.add(Layout_js_1.WS.NEWLINE, Layout_js_1.WS.INDENT, this.showKw(node.limitKw), Layout_js_1.WS.SPACE));
++            if (node.offset) {
++                this.layout = this.formatSubExpression(node.offset);
++                this.layout.add(Layout_js_1.WS.NO_SPACE, ',', Layout_js_1.WS.SPACE);
++            }
++            this.layout = this.formatSubExpression(node.count);
++            return;
++        }
+         this.withComments(node.limitKw, () => {
+             this.layout.add(Layout_js_1.WS.NEWLINE, Layout_js_1.WS.INDENT, this.showKw(node.limitKw));
+         });
+@@ -405,13 +477,13 @@ class ExpressionFormatter {
+             return comment.split(/\n/).map(line => line.replace(/^\s*/, ''));
+         }
+     }
+-    formatSubExpression(nodes, enclosingParenthesis = this.enclosingParenthesis) {
++    formatSubExpression(nodes, enclosingParenthesis = this.enclosingParenthesis, inline = this.inline) {
+         return new ExpressionFormatter({
+             cfg: this.cfg,
+             dialectCfg: this.dialectCfg,
+             params: this.params,
+             layout: this.layout,
+-            inline: this.inline,
++            inline,
+             enclosingParenthesis,
+         }).format(nodes);
+     }
+@@ -467,6 +539,9 @@ class ExpressionFormatter {
+     }
+     formatKeyword(node) {
+         this.layout.add(this.showKw(node), Layout_js_1.WS.SPACE);
++        if (!['CASE', 'WHEN', 'THEN', 'ELSE', 'END'].includes(node.text) && this.breakAfter(node.text, false)) {
++            this.layout.add(Layout_js_1.WS.NEWLINE, Layout_js_1.WS.INDENT);
++        }
+     }
+     formatLogicalOperator(node) {
+         if (this.cfg.logicalOperatorNewline === 'before') {
+diff --git a/dist/cjs/lexer/Tokenizer.js b/dist/cjs/lexer/Tokenizer.js
+index 0abf6b7e5a07fe98b4c3e427372f2ac77c7d0afc..bbf611390c74e4b70b4f6454b587d42847a0cd01 100644
+--- a/dist/cjs/lexer/Tokenizer.js
++++ b/dist/cjs/lexer/Tokenizer.js
+@@ -46,7 +46,18 @@ class Tokenizer {
+             ...this.rulesAfterParams,
+         ];
+         const tokens = new TokenizerEngine_js_1.default(rules, this.dialectName).tokenize(input);
+-        return this.cfg.postProcess ? this.cfg.postProcess(tokens) : tokens;
++        const keywords = new Set(this.cfg.omniKeywordExclude || []);
++        const types = new Set(this.cfg.omniDataTypeExclude || []);
++        const filtered = tokens.map(token => {
++            const word = token.raw.trim().replace(/\s+/g, ' ').toUpperCase();
++            const dataType = token.type === token_js_1.TokenType.RESERVED_DATA_TYPE || token.type === token_js_1.TokenType.RESERVED_DATA_TYPE_PHRASE;
++            const protectedToken = [token_js_1.TokenType.STRING, token_js_1.TokenType.QUOTED_IDENTIFIER, token_js_1.TokenType.LINE_COMMENT, token_js_1.TokenType.BLOCK_COMMENT, token_js_1.TokenType.DISABLE_COMMENT].includes(token.type);
++            if (!protectedToken && (dataType ? types.has(word) : keywords.has(word))) {
++                return { ...token, type: token_js_1.TokenType.IDENTIFIER, text: token.raw };
++            }
++            return token;
++        });
++        return this.cfg.postProcess ? this.cfg.postProcess(filtered) : filtered;
+     }
+     // These rules can be cached as they only depend on
+     // the Tokenizer config options specified for each SQL dialect
+diff --git a/dist/cjs/lexer/TokenizerOptions.d.ts b/dist/cjs/lexer/TokenizerOptions.d.ts
+index 65b68e04893d16581c60a36dcaa5bff53cd4f1bb..c3a4babd4a6fd230239bef01524c1405f39842eb 100644
+--- a/dist/cjs/lexer/TokenizerOptions.d.ts
++++ b/dist/cjs/lexer/TokenizerOptions.d.ts
+@@ -29,6 +29,8 @@ export interface CustomParameter {
+     key?: (text: string) => string;
+ }
+ export interface TokenizerOptions {
++    omniKeywordExclude?: string[];
++    omniDataTypeExclude?: string[];
+     reservedSelect: string[];
+     reservedClauses: string[];
+     supportsXor?: boolean;
+diff --git a/dist/esm/dialect.js b/dist/esm/dialect.js
+index 9b79ac855ba4676344304d777bfa792ae7a880ac..de827a2cc793e5a901006ee4093bc64c19c65936 100644
+--- a/dist/esm/dialect.js
++++ b/dist/esm/dialect.js
+@@ -1,5 +1,5 @@
+ import Tokenizer from './lexer/Tokenizer.js';
+-const cache = new Map();
++const cache = new WeakMap();
+ /**
+  * Factory function for building Dialect objects.
+  * When called repeatedly with same options object returns the cached Dialect,
+diff --git a/dist/esm/formatter/ExpressionFormatter.js b/dist/esm/formatter/ExpressionFormatter.js
+index cbbe965bb077e2ff448439d83881113387d43327..3e27b29fd43aa1cc31dc5a1218d2cd4e7287a25d 100644
+--- a/dist/esm/formatter/ExpressionFormatter.js
++++ b/dist/esm/formatter/ExpressionFormatter.js
+@@ -116,6 +116,15 @@ export default class ExpressionFormatter {
+         this.formatNode(node.property);
+     }
+     formatParenthesis(node) {
++        const first = node.children[0];
++        if (node.children.length === 1 && first.type === NodeType.case_expression &&
++            this.layout.isAtStartOfLine() && !first.leadingComments?.length &&
++            !first.trailingComments?.length) {
++            this.layout.add(node.openParen);
++            this.formatNode(first);
++            this.layout.add(WS.NO_SPACE, node.closeParen, WS.SPACE);
++            return;
++        }
+         const inlineLayout = this.formatInlineExpression(node.children, node.openParen);
+         if (inlineLayout) {
+             this.layout.add(node.openParen);
+@@ -144,28 +153,77 @@ export default class ExpressionFormatter {
+         this.layout = this.formatSubExpression(node.expr2);
+         this.layout.add(WS.NO_SPACE, WS.SPACE);
+     }
++    breakAfter(keyword, fallback) {
++        const settings = this.cfg.omniNewlineAfter || {};
++        return settings[keyword] ?? settings[keyword.split(' ')[0]] ?? fallback;
++    }
++    formatBranchBody(nodes, keyword) {
++        if (this.breakAfter(keyword, false)) {
++            this.layout.indentation.increaseBlockLevel();
++            this.layout.add(WS.NEWLINE, WS.INDENT);
++            this.layout = this.formatSubExpression(nodes);
++            this.layout.indentation.decreaseBlockLevel();
++        } else {
++            this.layout = this.formatSubExpression(nodes);
++        }
++    }
+     formatCaseExpression(node) {
+         this.formatNode(node.caseKw);
+         this.layout.indentation.increaseBlockLevel();
++        if (node.expr.length && this.breakAfter('CASE', true)) this.layout.add(WS.NEWLINE, WS.INDENT);
+         this.layout = this.formatSubExpression(node.expr);
+         this.layout = this.formatSubExpression(node.clauses);
+         this.layout.indentation.decreaseBlockLevel();
+-        this.layout.add(WS.NEWLINE, WS.INDENT);
++        const expanded = ['CASE', 'WHEN', 'THEN', 'ELSE'].some(key => this.breakAfter(key, key === 'CASE'));
++        this.layout.add(...(expanded ? [WS.NEWLINE, WS.INDENT] : [WS.NO_SPACE, WS.SPACE]));
+         this.formatNode(node.endKw);
++        if (this.breakAfter('END', false)) this.layout.add(WS.NEWLINE, WS.INDENT);
+     }
+     formatCaseWhen(node) {
+-        this.layout.add(WS.NEWLINE, WS.INDENT);
++        this.layout.add(...(this.breakAfter('CASE', true) ? [WS.NEWLINE, WS.INDENT] : [WS.NO_SPACE, WS.SPACE]));
+         this.formatNode(node.whenKw);
+-        this.layout = this.formatSubExpression(node.condition);
++        this.formatBranchBody(node.condition, 'WHEN');
+         this.formatNode(node.thenKw);
+-        this.layout = this.formatSubExpression(node.result);
++        this.formatBranchBody(node.result, 'THEN');
+     }
+     formatCaseElse(node) {
+-        this.layout.add(WS.NEWLINE, WS.INDENT);
++        this.layout.add(...(this.breakAfter('CASE', true) ? [WS.NEWLINE, WS.INDENT] : [WS.NO_SPACE, WS.SPACE]));
+         this.formatNode(node.elseKw);
+-        this.layout = this.formatSubExpression(node.result);
++        this.formatBranchBody(node.result, 'ELSE');
++    }
++    formatSelectHints(node) {
++        if (!this.cfg.omniFormatHint || !/^SELECT(?:\s|$)/u.test(node.nameKw.text)) return false;
++        const hints = [];
++        for (const child of node.children) {
++            if (child.type !== NodeType.block_comment || child.leadingComments?.length || child.trailingComments?.length) break;
++            const hint = this.cfg.omniFormatHint(child.text);
++            if (hint === undefined) break;
++            hints.push(hint);
++        }
++        if (!hints.length) return false;
++        this.layout.add(WS.NEWLINE, WS.INDENT, this.showKw(node.nameKw));
++        this.layout.indentation.increaseTopLevel();
++        const sameLine = this.cfg.omniHintPlacement !== 'nextLine';
++        this.layout.add(...(sameLine ? [WS.SPACE] : [WS.NEWLINE, WS.INDENT]));
++        this.layout.add(hints.join(' '));
++        const expanded = this.breakAfter(node.nameKw.text, true);
++        this.layout.add(...(expanded ? [WS.NEWLINE, WS.INDENT] : [WS.SPACE]));
++        this.layout = this.formatSubExpression(node.children.slice(hints.length), this.enclosingParenthesis, !expanded);
++        this.layout.indentation.decreaseTopLevel();
++        return true;
+     }
+     formatClause(node) {
++        if (this.formatSelectHints(node)) return;
++        if (this.inline && node.nameKw.text === 'PARTITION BY') {
++            this.formatNode(node.nameKw);
++            this.layout = this.formatSubExpression(node.children);
++            return;
++        }
++        if (node.nameKw.text === 'WHERE' && !this.breakAfter('WHERE', true) && node.children.length === 1 &&
++            node.children[0].type === NodeType.parenthesis) {
++            this.formatClauseInOnelineStyle(node);
++            return;
++        }
+         if (this.isOnelineClause(node)) {
+             this.formatClauseInOnelineStyle(node);
+         }
+@@ -177,6 +235,11 @@ export default class ExpressionFormatter {
+         }
+     }
+     isOnelineClause(node) {
++        const configured = this.breakAfter(node.nameKw.text, undefined);
++        if (configured !== undefined) return !configured;
++        if (/^UPDATE(?: ONLY)?$/u.test(node.nameKw.text)) {
++            return false;
++        }
+         if (isTabularStyle(this.cfg)) {
+             return this.dialectCfg.tabularOnelineClauses[node.nameKw.text];
+         }
+@@ -188,12 +251,12 @@ export default class ExpressionFormatter {
+         this.layout.add(WS.NEWLINE, WS.INDENT, this.showKw(node.nameKw), WS.NEWLINE);
+         this.layout.indentation.increaseTopLevel();
+         this.layout.add(WS.INDENT);
+-        this.layout = this.formatSubExpression(node.children);
++        this.layout = this.formatSubExpression(node.children, this.enclosingParenthesis, false);
+         this.layout.indentation.decreaseTopLevel();
+     }
+     formatClauseInOnelineStyle(node) {
+         this.layout.add(WS.NEWLINE, WS.INDENT, this.showKw(node.nameKw), WS.SPACE);
+-        this.layout = this.formatSubExpression(node.children);
++        this.layout = this.formatSubExpression(node.children, this.enclosingParenthesis, true);
+     }
+     formatClauseInTabularStyle(node) {
+         this.layout.add(WS.NEWLINE, WS.INDENT, this.showKw(node.nameKw), WS.SPACE);
+@@ -207,6 +270,15 @@ export default class ExpressionFormatter {
+         this.layout = this.formatSubExpression(node.children);
+     }
+     formatLimitClause(node) {
++        if (!this.breakAfter('LIMIT', true)) {
++            this.withComments(node.limitKw, () => this.layout.add(WS.NEWLINE, WS.INDENT, this.showKw(node.limitKw), WS.SPACE));
++            if (node.offset) {
++                this.layout = this.formatSubExpression(node.offset);
++                this.layout.add(WS.NO_SPACE, ',', WS.SPACE);
++            }
++            this.layout = this.formatSubExpression(node.count);
++            return;
++        }
+         this.withComments(node.limitKw, () => {
+             this.layout.add(WS.NEWLINE, WS.INDENT, this.showKw(node.limitKw));
+         });
+@@ -380,13 +452,13 @@ export default class ExpressionFormatter {
+             return comment.split(/\n/).map(line => line.replace(/^\s*/, ''));
+         }
+     }
+-    formatSubExpression(nodes, enclosingParenthesis = this.enclosingParenthesis) {
++    formatSubExpression(nodes, enclosingParenthesis = this.enclosingParenthesis, inline = this.inline) {
+         return new ExpressionFormatter({
+             cfg: this.cfg,
+             dialectCfg: this.dialectCfg,
+             params: this.params,
+             layout: this.layout,
+-            inline: this.inline,
++            inline,
+             enclosingParenthesis,
+         }).format(nodes);
+     }
+@@ -442,6 +514,9 @@ export default class ExpressionFormatter {
+     }
+     formatKeyword(node) {
+         this.layout.add(this.showKw(node), WS.SPACE);
++        if (!['CASE', 'WHEN', 'THEN', 'ELSE', 'END'].includes(node.text) && this.breakAfter(node.text, false)) {
++            this.layout.add(WS.NEWLINE, WS.INDENT);
++        }
+     }
+     formatLogicalOperator(node) {
+         if (this.cfg.logicalOperatorNewline === 'before') {
+diff --git a/dist/esm/lexer/Tokenizer.js b/dist/esm/lexer/Tokenizer.js
+index 2252c63e58154bd7c433c50fa916058c53dba4d7..79daa4c891bcf35531f545348973f5c1f0a8ea28 100644
+--- a/dist/esm/lexer/Tokenizer.js
++++ b/dist/esm/lexer/Tokenizer.js
+@@ -18,7 +18,18 @@ export default class Tokenizer {
+             ...this.rulesAfterParams,
+         ];
+         const tokens = new TokenizerEngine(rules, this.dialectName).tokenize(input);
+-        return this.cfg.postProcess ? this.cfg.postProcess(tokens) : tokens;
++        const keywords = new Set(this.cfg.omniKeywordExclude || []);
++        const types = new Set(this.cfg.omniDataTypeExclude || []);
++        const filtered = tokens.map(token => {
++            const word = token.raw.trim().replace(/\s+/g, ' ').toUpperCase();
++            const dataType = token.type === TokenType.RESERVED_DATA_TYPE || token.type === TokenType.RESERVED_DATA_TYPE_PHRASE;
++            const protectedToken = [TokenType.STRING, TokenType.QUOTED_IDENTIFIER, TokenType.LINE_COMMENT, TokenType.BLOCK_COMMENT, TokenType.DISABLE_COMMENT].includes(token.type);
++            if (!protectedToken && (dataType ? types.has(word) : keywords.has(word))) {
++                return { ...token, type: TokenType.IDENTIFIER, text: token.raw };
++            }
++            return token;
++        });
++        return this.cfg.postProcess ? this.cfg.postProcess(filtered) : filtered;
+     }
+     // These rules can be cached as they only depend on
+     // the Tokenizer config options specified for each SQL dialect
+diff --git a/dist/esm/lexer/TokenizerOptions.d.ts b/dist/esm/lexer/TokenizerOptions.d.ts
+index 65b68e04893d16581c60a36dcaa5bff53cd4f1bb..c3a4babd4a6fd230239bef01524c1405f39842eb 100644
+--- a/dist/esm/lexer/TokenizerOptions.d.ts
++++ b/dist/esm/lexer/TokenizerOptions.d.ts
+@@ -29,6 +29,8 @@ export interface CustomParameter {
+     key?: (text: string) => string;
+ }
+ export interface TokenizerOptions {
++    omniKeywordExclude?: string[];
++    omniDataTypeExclude?: string[];
+     reservedSelect: string[];
+     reservedClauses: string[];
+     supportsXor?: boolean;

@@ -1,0 +1,372 @@
+{
+  "name": "omni-sql-formatter",
+  "displayName": "Omni SQL Formatter",
+  "description": "Configurable SQL formatting across PostgreSQL, MySQL, Hive, Spark and more.",
+  "version": "0.3.0",
+  "publisher": "tatenlee",
+  "author": "tatenlee",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0",
+    "node": ">=22"
+  },
+  "categories": [
+    "Formatters"
+  ],
+  "activationEvents": [
+    "onLanguage:sql",
+    "onLanguage:postgresql",
+    "onLanguage:postgres"
+  ],
+  "main": "./dist/extension.cjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:extension": "pnpm run build && node scripts/test-extension.mjs",
+    "vscode:prepublish": "pnpm run check && pnpm test && pnpm run build",
+    "package": "vsce package --no-dependencies --allow-missing-repository --out omni-sql-formatter.vsix"
+  },
+  "packageManager": "pnpm@10.28.2",
+  "contributes": {
+    "configuration": [
+      {
+        "id": "omniDialect",
+        "title": "Omni SQL Formatter: 方言",
+        "order": 1,
+        "properties": {
+          "omniSqlFormatter.dialect": {
+            "scope": "resource",
+            "type": "string",
+            "enum": [
+              "sql",
+              "postgresql",
+              "mysql",
+              "mariadb",
+              "hive",
+              "spark",
+              "bigquery",
+              "clickhouse",
+              "duckdb",
+              "sqlite",
+              "transactsql",
+              "trino",
+              "snowflake",
+              "redshift",
+              "plsql",
+              "db2",
+              "db2i",
+              "tidb",
+              "n1ql",
+              "singlestoredb"
+            ],
+            "default": "sql",
+            "description": "通用 SQL 为默认解析模式；专有引号、字符串和运算符请选择对应方言。排版选项跨方言共用，不会自动猜测或转换 SQL。"
+          }
+        }
+      },
+      {
+        "id": "omniKeywords",
+        "title": "Omni SQL Formatter: 关键词",
+        "order": 2,
+        "properties": {
+          "omniSqlFormatter.keywords.case": {
+            "scope": "resource",
+            "type": "string",
+            "enum": [
+              "upper",
+              "lower",
+              "preserve"
+            ],
+            "enumDescriptions": [
+              "全部大写",
+              "全部小写",
+              "保留输入大小写"
+            ],
+            "default": "upper",
+            "description": "关键词大小写。"
+          },
+          "omniSqlFormatter.keywords.include": {
+            "scope": "resource",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "maxItems": 500,
+            "description": "补充识别的关键词或短语，不区分大小写。只补充分类，不创建新的 SQL 语法。 可逐项添加，或在一项内使用英文逗号 , / 中文逗号 ，分隔。匹配不区分大小写，自动去除首尾空格和重复项；短语内部保留空格。"
+          },
+          "omniSqlFormatter.keywords.exclude": {
+            "scope": "resource",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "maxItems": 500,
+            "description": "排除被误识别的关键词，保留其原始拼写；exclude 优先于同类 include。排除 CASE 等结构词可能使含该结构的语句无法解析。 可逐项添加，或在一项内使用英文逗号 , / 中文逗号 ，分隔。匹配不区分大小写，自动去除首尾空格和重复项；短语内部保留空格。"
+          }
+        }
+      },
+      {
+        "id": "omniTypes",
+        "title": "Omni SQL Formatter: 数据类型",
+        "order": 3,
+        "properties": {
+          "omniSqlFormatter.dataTypes.case": {
+            "scope": "resource",
+            "type": "string",
+            "enum": [
+              "upper",
+              "lower",
+              "preserve"
+            ],
+            "enumDescriptions": [
+              "全部大写",
+              "全部小写",
+              "保留输入大小写"
+            ],
+            "default": "upper",
+            "description": "数据类型大小写。"
+          },
+          "omniSqlFormatter.dataTypes.include": {
+            "scope": "resource",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "maxItems": 500,
+            "description": "补充类型名称或短语，例如 VECTOR、CUSTOM TYPE。类型 include 优先于关键词 include。 可逐项添加，或在一项内使用英文逗号 , / 中文逗号 ，分隔。匹配不区分大小写，自动去除首尾空格和重复项；短语内部保留空格。"
+          },
+          "omniSqlFormatter.dataTypes.exclude": {
+            "scope": "resource",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "maxItems": 500,
+            "description": "排除被误识别的数据类型，保留原始拼写；exclude 优先于同类 include。 可逐项添加，或在一项内使用英文逗号 , / 中文逗号 ，分隔。匹配不区分大小写，自动去除首尾空格和重复项；短语内部保留空格。"
+          }
+        }
+      },
+      {
+        "id": "omniNewlines",
+        "title": "Omni SQL Formatter: 关键词后换行",
+        "order": 4,
+        "properties": {
+          "omniSqlFormatter.newlineAfter.select": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": true,
+            "description": "SELECT 后换行。关闭时字段列表也保持同行。"
+          },
+          "omniSqlFormatter.newlineAfter.update": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": true,
+            "description": "UPDATE 后换行。复杂子查询、注释仍保留必要换行。"
+          },
+          "omniSqlFormatter.newlineAfter.insert": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": false,
+            "description": "INSERT 后换行。作用于 INSERT INTO 等完整短语。"
+          },
+          "omniSqlFormatter.newlineAfter.set": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": true,
+            "description": "SET 后换行。复杂子查询、注释仍保留必要换行。"
+          },
+          "omniSqlFormatter.newlineAfter.values": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": true,
+            "description": "VALUES 后换行。复杂子查询、注释仍保留必要换行。"
+          },
+          "omniSqlFormatter.newlineAfter.from": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": true,
+            "description": "FROM 后换行。复杂子查询、注释仍保留必要换行。"
+          },
+          "omniSqlFormatter.newlineAfter.where": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": true,
+            "description": "WHERE 后换行。复杂子查询、注释仍保留必要换行。"
+          },
+          "omniSqlFormatter.newlineAfter.group_by": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": true,
+            "description": "GROUP BY 后换行。复杂子查询、注释仍保留必要换行。"
+          },
+          "omniSqlFormatter.newlineAfter.order_by": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": true,
+            "description": "ORDER BY 后换行。复杂子查询、注释仍保留必要换行。"
+          },
+          "omniSqlFormatter.newlineAfter.having": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": true,
+            "description": "HAVING 后换行。复杂子查询、注释仍保留必要换行。"
+          },
+          "omniSqlFormatter.newlineAfter.limit": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": true,
+            "description": "LIMIT 后换行。复杂子查询、注释仍保留必要换行。"
+          },
+          "omniSqlFormatter.newlineAfter.offset": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": true,
+            "description": "OFFSET 后换行。复杂子查询、注释仍保留必要换行。"
+          },
+          "omniSqlFormatter.newlineAfter.returning": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": true,
+            "description": "RETURNING 后换行。复杂子查询、注释仍保留必要换行。"
+          },
+          "omniSqlFormatter.newlineAfter.case": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": true,
+            "description": "CASE 后换行。关闭时 CASE 分支尽量同行；WHEN/THEN/ELSE 的独立开关仍有效。"
+          },
+          "omniSqlFormatter.newlineAfter.when": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": false,
+            "description": "WHEN 后换行。复杂子查询、注释仍保留必要换行。"
+          },
+          "omniSqlFormatter.newlineAfter.then": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": false,
+            "description": "THEN 后换行。复杂子查询、注释仍保留必要换行。"
+          },
+          "omniSqlFormatter.newlineAfter.else": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": false,
+            "description": "ELSE 后换行。复杂子查询、注释仍保留必要换行。"
+          },
+          "omniSqlFormatter.newlineAfter.end": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": false,
+            "description": "END 后换行。开启时 END 后的别名/后续表达式换行。"
+          }
+        }
+      },
+      {
+        "id": "omniIndent",
+        "title": "Omni SQL Formatter: 缩进与间距",
+        "order": 5,
+        "properties": {
+          "omniSqlFormatter.indentation.style": {
+            "scope": "resource",
+            "type": "string",
+            "enum": [
+              "editor",
+              "tabs",
+              "spaces",
+              "none"
+            ],
+            "enumDescriptions": [
+              "跟随 VS Code 当前文档缩进设置",
+              "每层一个 Tab",
+              "每层指定数量的空格",
+              "换行后不添加缩进"
+            ],
+            "default": "editor",
+            "description": "换行后的缩进方式。"
+          },
+          "omniSqlFormatter.indentation.size": {
+            "scope": "resource",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 16,
+            "default": 4,
+            "description": "spaces 模式下每层空格数量；editor 模式使用编辑器 tabSize。"
+          },
+          "omniSqlFormatter.linesBetweenQueries": {
+            "scope": "resource",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5,
+            "default": 1,
+            "description": "两条 SQL 语句之间的空白行数。"
+          },
+          "omniSqlFormatter.expressionWidth": {
+            "scope": "resource",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "括号表达式保持单行的长度阈值，不是整行长度上限。"
+          }
+        }
+      },
+      {
+        "id": "omniHints",
+        "title": "Omni SQL Formatter: SELECT Hints",
+        "order": 6,
+        "properties": {
+          "omniSqlFormatter.hints.enabled": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": true,
+            "description": "识别 SELECT 后的 /* key=value */ 参数列表和 /*+ ... */ 优化器 hint。普通注释保持原样。"
+          },
+          "omniSqlFormatter.hints.placement": {
+            "scope": "resource",
+            "type": "string",
+            "enum": [
+              "sameLine",
+              "nextLine"
+            ],
+            "enumDescriptions": [
+              "与 SELECT 放在同一行",
+              "在 SELECT 后单独换行，并按配置缩进"
+            ],
+            "default": "sameLine",
+            "description": "hint 位置；字段列表是否换行仍由 newlineAfter.select 决定。"
+          },
+          "omniSqlFormatter.hints.formatContent": {
+            "scope": "resource",
+            "type": "boolean",
+            "default": true,
+            "description": "规范 hint 内的逗号、等号及 JSON/Python 风格容器间距；保留字符串、大小写、尾逗号和 /*+ 标记。不支持的表达式原样保留，不执行 JSON/Python 代码。"
+          }
+        }
+      }
+    ],
+    "commands": [
+      {
+        "command": "omniSqlFormatter.openSettings",
+        "title": "Omni SQL Formatter: 打开格式化设置"
+      }
+    ]
+  },
+  "dependencies": {
+    "sql-formatter": "15.9.0",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.11",
+    "@types/vscode": "1.90.0",
+    "@vscode/test-electron": "2.5.2",
+    "@vscode/vsce": "3.7.1",
+    "esbuild": "0.27.3",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}
