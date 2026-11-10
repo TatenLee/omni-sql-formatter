@@ -351,6 +351,10 @@
     ],
     "commands": [
       {
+        "command": "omniSqlFormatter.changeDialect",
+        "title": "Omni SQL Formatter: change dialect"
+      },
+      {
         "command": "omniSqlFormatter.openSettings",
         "title": "Omni SQL Formatter: 打开格式化设置"
       }

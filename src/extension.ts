@@ -1,8 +1,10 @@
 import * as vscode from "vscode";
 import { formatSql } from "./formatter";
 import { readSettings } from "./configuration";
+import { registerDialectPicker } from "./dialectPicker";
 
 export function activate(context: vscode.ExtensionContext): void {
+  registerDialectPicker(context);
   context.subscriptions.push(vscode.commands.registerCommand("omniSqlFormatter.openSettings", async () => {
     await vscode.commands.executeCommand("workbench.action.openSettings", `@ext:${context.extension.id}`);
   },

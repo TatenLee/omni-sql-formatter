@@ -1,9 +1,11 @@
 # IDE
 .vscode/
+.idea/
 
 # Dependencies and package-manager caches
 node_modules/
 .pnpm-store/
+.npm/
 
 # Build output and packaged extensions
 dist/
